@@ -4,14 +4,33 @@ var path = require('path');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 var twilio = require('twilio');
+const sgMail = require('@sendgrid/mail');
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+//import template from './email.html';
+var fs = require('fs');
+var template = fs.readFileSync('./email.html',{encoding:'utf-8'});
+
+
+const Handlebars = require("handlebars");
+const handlebarsTemplate = Handlebars.compile(template);
+//const MessagingResponse = require('twilio').twiml.MessagingResponse;
 
 // Load configuration information from system environment variables.
 var TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID,
     TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN,
-    TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
+    TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER,
+    MY_PHONE_NUMBER = process.env.MY_PHONE_NUMBER;
 
 // Create an authenticated client to access the Twilio REST API
 var client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+
+//!!!TESTING Sending a text that the server is running
+// client.messages.create({
+//   to: MY_PHONE_NUMBER,
+//   from: TWILIO_PHONE_NUMBER,
+//   body: 'The server is up and running!'
+// })
+// .then((message) => console.log(message.sid));
 
 var app = express();
 
@@ -37,12 +56,49 @@ app.post('/message', function(req, res, next) {
   client.messages.create({
     to: req.body.to,
     from: TWILIO_PHONE_NUMBER,
-    body: 'Good luck on your Twilio quest!'
+    body: 'Justan Other Twilio-Bot says "sup"!'
   }).then(function(message) {
     // When we get a response from Twilio, respond to the HTTP POST request
     res.send('Message is inbound!');
   });
 });
+
+//handle an incoming text message
+app.post('/sms', (req, res) => {
+  //const twiml = new MessagingRespone();
+  const twiml = new twilio.twiml.MessagingResponse();
+  console.log('req.body is : ' + JSON.stringify(req.body))
+  twiml.message('Please click the confirm button in the confirmation email sent to ' + JSON.stringify(req.body.Body));
+  //console.log('twiml is : ' + twiml.toString())
+  //Send email to address
+  const msg = {
+    to: req.body.Body,
+    from: 'test@example.com',
+    subject: 'Sending with Twilio SendGrid is Fun',
+    text: 'and easy to do anywhere, even with Node.js' + JSON.stringify(req.body.Body),
+    //html: '<strong>and easy to do anywhere, even with Node.js ' + JSON.stringify(req.body.Body) +'</strong>',
+    html: handlebarsTemplate({ 
+      From: req.body.From,
+      ToCountry: req.body.ToCountry, 
+      ToStateSmsMessageSid: req.body.ToStateSmsMessageSid,
+      SmsMessageSid: req.body.SmsMessageSid,
+      ToCity: req.body.ToCity, 
+      FromZip: req.body.FromZip,
+      SmsSid: req.body.SmsSid,
+      FromState: req.body.FromState, 
+      ToState: req.body.ToState, 
+      SmsStatus: req.body.SmsStatus,  
+      FromCity: req.body.FromCity,
+      Body: req.body.Body, 
+      To: req.body.To,
+      MessageSid: req.body.MessageSid,
+      ApiVersion: req.body.ApiVersion
+    })
+  };
+  sgMail.send(msg);
+  res.set('Content-Type','text/xml');
+  res.end(twiml.toString());
+})
 
 // handle a POST request to make an outbound call.
 // This is sent via ajax on our home page
@@ -72,6 +128,12 @@ app.post('/hello', function(req, res, next) {
   res.set('Content-Type','text/xml');
   res.send(twiml.toString());
 });
+
+//respond to email confirmation button
+app.get('/confirm*', function(req, res){
+  console.log("request is " + JSON.stringify(req.headers.from))
+  res.send('thank you')
+})
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
